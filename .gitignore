@@ -1,0 +1,19 @@
+# Notebook noise
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+
+# Envs
+.venv/
+venv/
+
+# Datasets ARE committed - a notebook must run without a download step.
+# Only model artefacts are excluded.
+*.h5
+*.keras
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

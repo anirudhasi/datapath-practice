@@ -1,0 +1,7 @@
+# Pinned loosely so notebooks keep working as versions move.
+numpy>=1.26
+pandas>=2.1
+matplotlib>=3.8
+scikit-learn>=1.4
+tensorflow>=2.16
+jupyterlab>=4.0
