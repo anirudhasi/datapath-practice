@@ -1,0 +1,135 @@
+RAG: Concept, History, and Architecture
+
+This lesson covers RAG (Retrieval-Augmented Generation) conceptually — why it's needed (with a
+historical perspective), what it is, and how a RAG system works step by step. (A hands-on RAG build in
+LangChain follows next.)
+
+ Why RAG? — LLMs and their limitations
+
+LLMs are large transformer-based neural networks with billions of parameters, pre-trained on
+huge amounts of data (~the whole internet). Their knowledge is stored in the parameters (weights and
+biases) — called parametric knowledge. More parameters → more parametric knowledge → more powerful.
+You access this knowledge by prompting: send a prompt, the LLM reads its parametric knowledge and
+generates an answer.
+
+This works most of the time, but fails in three situations:
+
+1. Private data — asking about your data (e.g. content of a private course video) fails, because
+ the LLM never saw it during pre-training.
+2. Recent data — every LLM has a knowledge cut-off date; ask about today's news and it can't
+ answer (ChatGPT can only because it searches the internet; a downloaded open-source model can't).
+3. Hallucination — the LLM confidently states factually incorrect information (it's
+ probabilistic, so it may make things up).
+
+ Solution attempt 1: Fine-tuning
+
+Fine-tuning takes a pre-trained LLM and re-trains it on a smaller, domain-specific dataset, so
+it gains your domain's knowledge in addition to general knowledge. (Analogy: an engineering graduate
+(pre-training) who then gets 2–3 months of company training (fine-tuning).)
+
+Techniques: Supervised fine-tuning (labeled dataset of prompt → desired-output pairs, ~1k–1M
+pairs); continued pre-training (unsupervised — feed domain text, e.g. lecture transcripts, like the
+original pre-training); RLHF (reinforcement learning from human feedback); plus LoRA/QLoRA (
+parameter-efficient methods).
+
+Supervised fine-tuning process (4 steps): (1) collect labeled domain data (prompt/desired-output
+pairs); (2) choose a method (full-parameter vs LoRA/QLoRA); (3) train for a few epochs (full-parameter
+retrains all weights; LoRA/QLoRA freezes base weights and trains the rest); (4) evaluate (exact match,
+factuality, hallucination rate, safety tests).
+
+How fine-tuning addresses the three problems: private data → becomes part of parametric knowledge;
+recent data → re-fine-tune with new data (but must repeat each update); hallucination → add training
+examples of tricky prompts where the desired answer is "I don't know."
+
+But fine-tuning has major problems: it's computationally expensive (training a huge model);
+needs strong technical expertise; and must be repeated whenever data changes — unsuitable for
+domains where information updates frequently.
+
+ Solution attempt 2: In-Context Learning
+
+ In-context learning is a core capability of large LLMs (GPT-3, Claude, Llama) where the model
+ learns to solve a task purely by seeing examples in the prompt, without updating its weights.
+
+Instead of the parametric-knowledge route, you put examples in the prompt and the LLM learns the
+task from them. E.g. show a few text→sentiment pairs, then ask for a new text's sentiment — this is
+few-shot prompting. Works for sentiment analysis, named-entity recognition, math, etc.
+
+It's an emergent property. An emergent property is a behavior that suddenly appears at a certain
+scale/complexity, even though it wasn't explicitly programmed. GPT-1/GPT-2 didn't reliably show
+in-context learning; GPT-3 (~175B parameters) did. The landmark paper "Language Models Are Few-
+Shot Learners" first described it: unlike fine-tuning (which needs 10k–1M labeled rows), humans learn
+a new task from just a few examples — and GPT-3-scale models can too, learning from prompt examples
+without weight updates. Later alignment techniques (supervised fine-tuning, RLHF) made GPT-3.5/GPT-4
+even better at it.
+
+ From In-Context Learning to RAG
+
+Enhance in-context learning: instead of giving examples of how to solve the task, inject the full
+context needed to answer.
+
+Example: a course site with 2-hour lecture videos and a chatbot for student doubts. A student, stuck
+on the gradient descent part of a linear-regression lecture, asks a question. You send the LLM two
+things: (1) the student's question, and (2) the transcript of the gradient-descent segment (say
+minutes 5–25) as context. The LLM uses this context to answer — you're not giving examples of how
+to solve, but the knowledge required to solve.
+
+This is exactly RAG:
+
+ RAG is a way to make a language model smarter by giving it extra information at the time you ask
+ your question.
+
+The prompt combines the user query + retrieved context, and the LLM merges this context with its
+parametric knowledge to answer. A typical RAG prompt: "You are a helpful assistant. Answer the question
+only from the provided context. If the context is insufficient, just say you don't know. Context:
+{context} Question: {question}".
+
+ How a RAG system works — four steps
+
+RAG marries two ideas: information retrieval (an old CS topic) and text generation (from LLMs).
+Broadly, four steps: Indexing, Retrieval, Augmentation, Generation.
+
+ 1. Indexing — building the external knowledge base
+
+Prepare your knowledge base so it can be searched efficiently at query time. Four sub-steps:
+
+1. Document ingestion — load your source knowledge into memory (e.g. video transcripts from a
+ server, company docs from Google Drive / AWS S3), using document loaders (PyPDFLoader,
+ YouTubeLoader, WebBaseLoader, …). Result: the document as a string.
+2. Text chunking — split the large document into small, semantically meaningful chunks (because
+ of the LLM's context-length limit, and because semantic search is poorer over large documents),
+ using text splitters (RecursiveCharacterTextSplitter, SemanticChunker, HTML/Markdown splitters).
+3. Embedding generation — convert each chunk into a dense vector capturing its meaning, using an
+ embedding model (OpenAI embeddings, sentence-transformers).
+4. Storage — store the vectors (with the original chunk text + metadata) in a vector store (FAISS,
+ Chroma locally; Pinecone, Weaviate, Milvus, Qdrant in the cloud). This vector store is your
+ external knowledge base.
+
+ 2. Retrieval — finding the relevant context
+
+At query time, the user asks a question (e.g. "How do we perform the optimization step in gradient
+descent?"). The retriever (four sub-steps): (1) embed the query with the same embedding model;
+(2) semantic search for the vectors closest to the query vector (simple similarity, or advanced —
+MMR, contextual compression); (3) rank the results (cosine similarity or advanced re-ranking); (4)
+fetch the top results' text chunks — this becomes the context.
+
+ 3. Augmentation — building the prompt
+
+Combine the query + retrieved context into a prompt ("Answer only from the provided context…"),
+adding the extra knowledge on top of the LLM's parametric knowledge.
+
+ 4. Generation
+
+Send the prompt to the LLM, which uses text generation + in-context learning to answer from the
+context, producing the final response.
+
+ How RAG solves the three problems
+
+1. Private data — the external knowledge base is built from your data, so answers come from your
+ data.
+2. Recent data — just add recent articles/news to the knowledge base (embed and store); no
+ retraining needed — much cheaper than re-fine-tuning.
+3. Hallucination — you provide exact context and explicitly instruct the model to answer only
+ from it (else say "I don't know"), grounding the response and greatly reducing hallucination.
+
+Plus: compared to fine-tuning, RAG is cheaper and simpler — no training, no labeled dataset;
+just load your documents into a vector store. (Next: building a RAG system from scratch in LangChain.)
